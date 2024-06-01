@@ -1,6 +1,9 @@
 import asyncio
 import httpx
 import logging
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel, Field
+from beanie import init_beanie, Document, Indexed, PydanticObjectId, DecimalAnnotation
 
 # configure logging
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S', filename='data_collector.log')
@@ -37,6 +40,31 @@ async def fetch_exchange_rate() -> dict:
             # handle request errors (e.g. DNS resolution failed)
             logging.error(f'Request Error: {e}')
 
+# define a Pydantic model for fiat currency rates
+class FiatRate(BaseModel):
+    AED: DecimalAnnotation  # United Arab Emirates Dirham
+    EUR: DecimalAnnotation  # Euro
+    USD: DecimalAnnotation  # United States Dollar
+
+# define a Pydantic model for cryptocurrency rates
+class CryptoRate(BaseModel):
+    BTC: DecimalAnnotation  # Bitcoin
+    ETH: DecimalAnnotation  # Ethereum
+    SOL: DecimalAnnotation  # Solana
+
+async def invert_exchange_rate(rate: dict) -> dict:
+    '''
+    convert the previous exchange rate to Ethiopian Birr (ETB)
+
+    Parameters:
+        rate: dict - the previous exchange rate dictionary
+
+    Returns:
+        dict: the inverted exchange rate
+    '''
+    # invert the exchange rates by dividing 1 by each rate
+    return {key: str(1/DecimalAnnotation(value)) for key, value in rate.items()}
+
 async def main() -> None:
     '''
     the main entry point of the program
@@ -48,7 +76,9 @@ async def main() -> None:
         None
     '''
     # call the fetch_exchange_rate function and await its result
-    await fetch_exchange_rate()
+    rate = await fetch_exchange_rate()
+    # call the invert_exchange_rate function and await its result
+    inverted_rate = await invert_exchange_rate(rate)
 
 if __name__ == '__main__':
     # run the main function using the asyncio event loop

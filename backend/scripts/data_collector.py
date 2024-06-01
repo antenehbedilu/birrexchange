@@ -1,9 +1,12 @@
+import os
 import asyncio
 import httpx
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from beanie import init_beanie, Document, Indexed, PydanticObjectId, DecimalAnnotation
+from datetime import datetime
+from dotenv import load_dotenv
 
 # configure logging
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S', filename='data_collector.log')
@@ -52,6 +55,24 @@ class CryptoRate(BaseModel):
     ETH: DecimalAnnotation  # Ethereum
     SOL: DecimalAnnotation  # Solana
 
+# define a MongoDB document for fiat currency
+class Fiat(Document):
+    date: Indexed(datetime) = Field(default_factory=datetime.now) # the date retrieved, defaulting to the current date and time
+    rates: FiatRate # rates for different fiat currencies
+
+    class Settings:
+        # collection name in MongoDB
+        name = 'fiat'
+
+# define a MongoDB document for cryptocurrency
+class Crypto(Document):
+    date: Indexed(datetime) = Field(default_factory=datetime.now) # the date retrieved, defaulting to the current date and time
+    rates: CryptoRate # rates for different cryptocurrencies
+
+    class Settings:
+        # collection name in MongoDB
+        name = 'crypto'
+
 async def invert_exchange_rate(rate: dict) -> dict:
     '''
     convert the previous exchange rate to Ethiopian Birr (ETB)
@@ -64,6 +85,40 @@ async def invert_exchange_rate(rate: dict) -> dict:
     '''
     # invert the exchange rates by dividing 1 by each rate
     return {key: str(1/DecimalAnnotation(value)) for key, value in rate.items()}
+
+async def store_exchange_rate(inverted_rate: dict) -> None:
+    '''
+    store the exchange rates in MongoDB
+
+    Parameters:
+        inverted_rate: dict - the inverted exchange rate dictionary
+
+    Returns:
+        None
+    '''
+    try:
+        # load the environment variable stored in the '.env' file from the current directory
+        load_dotenv()
+        # get the value of the 'MONGO' environment variable and save it in the 'MONGO' variable, which is our database connection string
+        MONGO = os.getenv('MONGO')
+        if not MONGO:
+            # verify if the MONGO variable is not empty
+            logging.critical('Environment variable Error: the MONGO variable is not set')
+        # create an AsyncIOMotorClient instance with the MongoDB connection string
+        client = AsyncIOMotorClient(MONGO)
+        # initialize Beanie with the database and document models
+        await init_beanie(database=client.birr, document_models=[Fiat, Crypto])
+        # create a fiat document instance with the inverted exchange rate
+        fiat = Fiat(rates=FiatRate(**inverted_rate))
+        # insert the fiat document into the database
+        await fiat.insert()
+        # create a crypto document instance with the inverted exchange rate
+        crypto = Crypto(rates=CryptoRate(**inverted_rate))
+        # insert the crypto document into the database
+        await crypto.insert()
+    except Exception as e:
+        # handle any exceptions associated with the database connection
+        logging.critical(f'Database connection Error: {e}')
 
 async def main() -> None:
     '''
@@ -79,6 +134,8 @@ async def main() -> None:
     rate = await fetch_exchange_rate()
     # call the invert_exchange_rate function and await its result
     inverted_rate = await invert_exchange_rate(rate)
+    # call the store_exchange_rate function and await its result
+    await store_exchange_rate(inverted_rate)
 
 if __name__ == '__main__':
     # run the main function using the asyncio event loop

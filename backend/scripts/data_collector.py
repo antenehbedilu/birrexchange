@@ -33,14 +33,14 @@ async def fetch_exchange_rate() -> dict:
             response.raise_for_status()
             # return the most recent exchange rates for Ethiopian Birr (ETB) in both fiat and cryptocurrencies
             return response.json()['data']['rates']
+        # handle HTTP status errors (e.g. 404, 500)
         except httpx.HTTPStatusError as e:
-            # handle HTTP status errors (e.g. 404, 500)
             logging.error(f'Status Error: {e.response.status_code} - {e.response.reason_phrase}')
+        # handle HTTP errors (e.g. connection refused)
         except httpx.HTTPError as e:
-            # handle HTTP errors (e.g. connection refused)
             logging.error(f'HTTP Exception: {e.request.url} - {e}')
+        # handle request errors (e.g. DNS resolution failed)
         except httpx.RequestError as e:
-            # handle request errors (e.g. DNS resolution failed)
             logging.error(f'Request Error: {e}')
 
 # define a Pydantic model for fiat currency rates
@@ -97,13 +97,18 @@ async def store_exchange_rate(inverted_rate: dict) -> None:
         None
     '''
     try:
-        # load the environment variable stored in the '.env' file from the current directory
+        # check if the .env file exists before loading environment variables
+        if not os.path.isfile('.env'):
+            logging.critical('File Error: the .env file is missing')
+            return
+        # load environment variables from the '.env' file
         load_dotenv()
         # get the value of the 'MONGO' environment variable and save it in the 'MONGO' variable, which is our database connection string
         MONGO = os.getenv('MONGO')
+        # verify if the MONGO variable is not empty
         if not MONGO:
-            # verify if the MONGO variable is not empty
             logging.critical('Environment variable Error: the MONGO variable is not set')
+            return
         # create an AsyncIOMotorClient instance with the MongoDB connection string
         client = AsyncIOMotorClient(MONGO)
         # initialize Beanie with the database and document models

@@ -73,25 +73,42 @@ class Crypto(Document):
         # collection name in MongoDB
         name = 'crypto'
 
-async def invert_exchange_rate(rate: dict) -> dict:
+async def clean_exchange_rate(rate: dict) -> dict:
     '''
-    convert the previous exchange rate to Ethiopian Birr (ETB)
+    cleans the exchange rates by utilizing the Pydantic models
 
     Parameters:
-        rate: dict - the previous exchange rate dictionary
+        rate: dict - previous exchange rate dictionary
 
     Returns:
-        dict: the inverted exchange rate
+        dict: cleaned exchange rates
+    '''
+    # filter the fiat currency using the FiatRate Pydantic model
+    fiat = dict(FiatRate(**rate))
+    # filter the crypto currency using the CryptoRate Pydantic model
+    crypto = dict(CryptoRate(**rate))
+    # merge the two dictionaries into one
+    return {**fiat, **crypto}
+
+async def invert_exchange_rate(filtered_rate: dict) -> dict:
+    '''
+    convert the cleaned exchange rate to Ethiopian Birr (ETB)
+
+    Parameters:
+        filtered_rate: dict - cleaned exchange rate dictionary
+
+    Returns:
+        dict: inverted exchange rate
     '''
     # invert the exchange rates by dividing 1 by each rate
-    return {key: str(1/DecimalAnnotation(value)) for key, value in rate.items()}
+    return {key: str(1/DecimalAnnotation(value)) for key, value in filtered_rate.items()}
 
 async def store_exchange_rate(inverted_rate: dict) -> None:
     '''
-    store the exchange rates in MongoDB
+    store the inverted exchange rates in MongoDB
 
     Parameters:
-        inverted_rate: dict - the inverted exchange rate dictionary
+        inverted_rate: dict - inverted exchange rate dictionary
 
     Returns:
         None
@@ -137,8 +154,10 @@ async def main() -> None:
     '''
     # call the fetch_exchange_rate function and await its result
     rate = await fetch_exchange_rate()
+    # call the clean_exchange_rate function and await its result
+    filtered_rate = await clean_exchange_rate(rate)
     # call the invert_exchange_rate function and await its result
-    inverted_rate = await invert_exchange_rate(rate)
+    inverted_rate = await invert_exchange_rate(filtered_rate)
     # call the store_exchange_rate function and await its result
     await store_exchange_rate(inverted_rate)
 
